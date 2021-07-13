@@ -4,8 +4,10 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Handler;
 import android.util.AttributeSet;
@@ -55,6 +57,7 @@ public class LoopView extends View {
     private GestureDetector flingGestureDetector;
     OnItemSelectedListener onItemSelectedListener;
     OnItemScrollListener mOnItemScrollListener;
+    OnItemClickListenter onItemClickListenter;
 
     // Timer mTimer;
     ScheduledExecutorService mExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -63,6 +66,14 @@ public class LoopView extends View {
     private Paint paintOuterText;
     private Paint paintCenterText;
     private Paint paintIndicator;
+    //中心文字的背景画笔
+    private Paint paintCenterTextBG;
+    //是否绘制中文文字背景
+    private boolean isDrawCenterTextBG = false;
+    //是否设置文字距离
+    private boolean isSetTextPadding = false;
+    //文字距离左边的距离
+    private int textPaddingleft = 0;
 
     List<IndexString> items;
 
@@ -124,11 +135,12 @@ public class LoopView extends View {
 
     /**
      * set outer text color
+     *
      * @param centerTextColor
      */
     public void setCenterTextColor(int centerTextColor) {
         this.centerTextColor = centerTextColor;
-        if(paintCenterText != null){
+        if (paintCenterText != null) {
             paintCenterText.setColor(centerTextColor);
         }
 
@@ -136,28 +148,31 @@ public class LoopView extends View {
 
     /**
      * set center text color
+     *
      * @param outerTextColor
      */
     public void setOuterTextColor(int outerTextColor) {
         this.outerTextColor = outerTextColor;
-        if(paintOuterText != null){
+        if (paintOuterText != null) {
             paintOuterText.setColor(outerTextColor);
         }
     }
 
     /**
      * set divider color
+     *
      * @param dividerColor
      */
     public void setDividerColor(int dividerColor) {
         this.dividerColor = dividerColor;
-        if(paintIndicator != null){
+        if (paintIndicator != null) {
             paintIndicator.setColor(dividerColor);
         }
     }
 
     /**
      * set text typeface
+     *
      * @param typeface
      */
     public void setTypeface(Typeface typeface) {
@@ -223,7 +238,7 @@ public class LoopView extends View {
         }
         if (visibleNumber != itemsVisibleCount) {
             itemsVisibleCount = visibleNumber;
-            drawingStrings=new HashMap<>();
+            drawingStrings = new HashMap<>();
         }
     }
 
@@ -250,6 +265,14 @@ public class LoopView extends View {
             paintIndicator = new Paint();
             paintIndicator.setColor(dividerColor);
             paintIndicator.setAntiAlias(true);
+        }
+
+        if (paintCenterTextBG == null) {
+            paintCenterTextBG = new Paint(Paint.ANTI_ALIAS_FLAG);
+            //默认是白色
+            paintCenterTextBG.setColor(Color.WHITE);
+            paintCenterTextBG.setStyle(Paint.Style.FILL);
+            paintCenterTextBG.setStrokeWidth(1f);
         }
     }
 
@@ -306,10 +329,13 @@ public class LoopView extends View {
             } else {
                 mOffset = -mOffset;
             }
+
+            mFuture =
+                    mExecutor.scheduleWithFixedDelay(new SmoothScrollTimerTask(this, mOffset), 0, 10, TimeUnit.MILLISECONDS);
+            changeScrollState(SCROLL_STATE_SCROLLING);
+        } else if (action == ACTION.CLICK) {
+            onItemClickListenter.OnItemClick(getSelectedItem());
         }
-        mFuture =
-            mExecutor.scheduleWithFixedDelay(new SmoothScrollTimerTask(this, mOffset), 0, 10, TimeUnit.MILLISECONDS);
-        changeScrollState(SCROLL_STATE_SCROLLING);
     }
 
     protected final void scrollBy(float velocityY) {
@@ -317,7 +343,7 @@ public class LoopView extends View {
         // change this number, can change fling speed
         int velocityFling = 10;
         mFuture = mExecutor.scheduleWithFixedDelay(new InertiaTimerTask(this, velocityY), 0, velocityFling,
-            TimeUnit.MILLISECONDS);
+                TimeUnit.MILLISECONDS);
         changeScrollState(SCROLL_STATE_DRAGGING);
     }
 
@@ -331,25 +357,26 @@ public class LoopView extends View {
 
     /**
      * 打印方法调用堆栈链信息 用于调试
+     *
      * @param methodName
      */
-    private void printMethodStackTrace(String methodName){
+    private void printMethodStackTrace(String methodName) {
         StackTraceElement[] invokers = Thread.currentThread().getStackTrace();
         StringBuilder sb = new StringBuilder("printMethodStackTrace ");
         sb.append(methodName);
         sb.append(" ");
-        for(int i= invokers.length -1;i >= 4;i--){
+        for (int i = invokers.length - 1; i >= 4; i--) {
             StackTraceElement invoker = invokers[i];
-            sb.append(String.format("%s(%d).%s",invoker.getFileName(),invoker.getLineNumber(),invoker.getMethodName()));
-            if(i > 4){
+            sb.append(String.format("%s(%d).%s", invoker.getFileName(), invoker.getLineNumber(), invoker.getMethodName()));
+            if (i > 4) {
                 sb.append("-->");
             }
         }
-        Log.i("printMethodStackTrace",sb.toString());
+        Log.i("printMethodStackTrace", sb.toString());
     }
 
-    private void changeScrollState(int scrollState){
-        if(scrollState != currentScrollState && !handler.hasMessages(MessageHandler.WHAT_SMOOTH_SCROLL_INERTIA)){
+    private void changeScrollState(int scrollState) {
+        if (scrollState != currentScrollState && !handler.hasMessages(MessageHandler.WHAT_SMOOTH_SCROLL_INERTIA)) {
             lastScrollState = currentScrollState;
             currentScrollState = scrollState;
 //            if(scrollState == SCROLL_STATE_SCROLLING || scrollState == SCROLL_STATE_IDLE){
@@ -367,15 +394,16 @@ public class LoopView extends View {
 
     /**
      * set text size in dp
+     *
      * @param size
      */
     public final void setTextSize(float size) {
         if (size > 0.0F) {
             textSize = (int) (context.getResources().getDisplayMetrics().density * size);
-            if(paintOuterText != null){
+            if (paintOuterText != null) {
                 paintOuterText.setTextSize(textSize);
             }
-            if(paintCenterText != null){
+            if (paintCenterText != null) {
                 paintCenterText.setTextSize(textSize);
             }
 
@@ -396,10 +424,13 @@ public class LoopView extends View {
         onItemSelectedListener = OnItemSelectedListener;
     }
 
-    public final void setOnItemScrollListener(OnItemScrollListener mOnItemScrollListener){
+    public final void setOnItemScrollListener(OnItemScrollListener mOnItemScrollListener) {
         this.mOnItemScrollListener = mOnItemScrollListener;
     }
 
+    public final void setOnItemClickListenter(OnItemClickListenter mOnItemClickListent) {
+        this.onItemClickListenter = mOnItemClickListent;
+    }
 
 
     public final void setItems(List<String> items) {
@@ -409,10 +440,10 @@ public class LoopView extends View {
         invalidate();
     }
 
-    public List<IndexString> convertData(List<String> items){
-        List<IndexString> data=new ArrayList<>();
+    public List<IndexString> convertData(List<String> items) {
+        List<IndexString> data = new ArrayList<>();
         for (int i = 0; i < items.size(); i++) {
-            data.add(new IndexString(i,items.get(i)));
+            data.add(new IndexString(i, items.get(i)));
         }
         return data;
     }
@@ -444,6 +475,7 @@ public class LoopView extends View {
 
     /**
      * set current item position
+     *
      * @param position
      */
     public void setCurrentPosition(int position) {
@@ -504,13 +536,13 @@ public class LoopView extends View {
                 drawingStrings.put(k1, items.get(l1));
             } else if (l1 < 0) {
 //                drawingStrings[k1] = "";
-                drawingStrings.put(k1,new IndexString());
+                drawingStrings.put(k1, new IndexString());
             } else if (l1 > items.size() - 1) {
 //                drawingStrings[k1] = "";
-                drawingStrings.put(k1,new IndexString());
+                drawingStrings.put(k1, new IndexString());
             } else {
-               // drawingStrings[k1] = items.get(l1);
-                drawingStrings.put(k1,items.get(l1));
+                // drawingStrings[k1] = items.get(l1);
+                drawingStrings.put(k1, items.get(l1));
             }
             k1++;
         }
@@ -570,30 +602,41 @@ public class LoopView extends View {
             i++;
         }
 
-        if(currentScrollState != lastScrollState){
+        if (currentScrollState != lastScrollState) {
             int oldScrollState = lastScrollState;
             lastScrollState = currentScrollState;
-            if(mOnItemScrollListener != null){
-                mOnItemScrollListener.onItemScrollStateChanged(this,getSelectedItem(),oldScrollState,currentScrollState,totalScrollY);
+            if (mOnItemScrollListener != null) {
+                mOnItemScrollListener.onItemScrollStateChanged(this, getSelectedItem(), oldScrollState, currentScrollState, totalScrollY);
             }
 
         }
-        if(currentScrollState == SCROLL_STATE_DRAGGING || currentScrollState == SCROLL_STATE_SCROLLING){
-            if(mOnItemScrollListener != null){
-                mOnItemScrollListener.onItemScrolling(this,getSelectedItem(),currentScrollState,totalScrollY);
+        if (currentScrollState == SCROLL_STATE_DRAGGING || currentScrollState == SCROLL_STATE_SCROLLING) {
+            if (mOnItemScrollListener != null) {
+                mOnItemScrollListener.onItemScrolling(this, getSelectedItem(), currentScrollState, totalScrollY);
             }
         }
     }
 
 
     private void drawOuterText(Canvas canvas, int position) {
-        canvas.drawText(drawingStrings.get(position).string, getTextX(drawingStrings.get(position).string, paintOuterText, tempRect),
-                getDrawingY(), paintOuterText);
+        if (isSetTextPadding) {
+            canvas.drawText(drawingStrings.get(position).string, 0 + textPaddingleft, getDrawingY(), paintOuterText);
+        } else {
+            canvas.drawText(drawingStrings.get(position).string, getTextX(drawingStrings.get(position).string, paintOuterText, tempRect),
+                    getDrawingY(), paintOuterText);
+        }
     }
 
     private void drawCenterText(Canvas canvas, int position) {
-        canvas.drawText(drawingStrings.get(position).string, getTextX(drawingStrings.get(position).string, paintOuterText, tempRect),
-                getDrawingY(), paintCenterText);
+        if (isSetTextPadding) {
+            if (isDrawCenterTextBG) {
+                drawPaintCenterTextBG(canvas, paintCenterTextBG);
+            }
+            canvas.drawText(drawingStrings.get(position).string, 0 + textPaddingleft, getDrawingY(), paintCenterText);
+        } else {
+            canvas.drawText(drawingStrings.get(position).string, getTextX(drawingStrings.get(position).string, paintOuterText, tempRect),
+                    getDrawingY(), paintCenterText);
+        }
     }
 
 
@@ -613,6 +656,41 @@ public class LoopView extends View {
         textWidth *= scaleX;
         return (measuredWidth - paddingLeft - textWidth) / 2 + paddingLeft;
     }
+
+
+    /**
+     * 绘制中心文字背景
+     *
+     * @param canvas
+     * @param paintCenterTextBG
+     */
+    private void drawPaintCenterTextBG(Canvas canvas, Paint paintCenterTextBG) {
+        RectF temp_rect = new RectF(0, 0, measuredWidth, measuredHeight);
+        canvas.drawRect(temp_rect, paintCenterTextBG);
+    }
+
+    /**
+     * 设置背景色
+     *
+     * @param color
+     */
+    public void setPaintCenterTextBGColor(int color) {
+        if (paintCenterTextBG != null) {
+            paintCenterTextBG.setColor(color);
+            isDrawCenterTextBG = true;
+        }
+    }
+
+    /**
+     * 设置文字距离值，设置之后，文字会从左边开始绘制
+     *
+     * @param padding
+     */
+    public void setTextLeftPadding(int padding) {
+        textPaddingleft = padding;
+        isSetTextPadding = true;
+    }
+
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -682,16 +760,18 @@ public class LoopView extends View {
         return true;
     }
 
-    class  IndexString {
+    class IndexString {
 
-        public  IndexString(){
-            this.string="";
+        public IndexString() {
+            this.string = "";
         }
 
-        public IndexString(int index,String str){
-            this.index=index;this.string=str;
+        public IndexString(int index, String str) {
+            this.index = index;
+            this.string = str;
         }
-        private String  string;
+
+        private String string;
         private int index;
     }
 }
